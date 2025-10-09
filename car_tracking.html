@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Car Control Route</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <style>
+    #map { height: 90vh; width: 100%; }
+    #info { padding: 10px; }
+    #confirmBtn { display: none; padding: 8px 14px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Select Your Route</h2>
+  <div id="map"></div>
+  <div id="info">
+    <p>Point A: <span id="pointA">Locating...</span></p>
+    <p>Point B: <span id="pointB">Not selected</span></p>
+    <p>Calculated Distance: <span id="calcDist">0</span> km</p>
+    <button id="confirmBtn">Confirm Route</button>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
+  <script>
+    let map = L.map('map').setView([10.82, 106.68], 12); // Default center: Binh Duong
+
+    // Base map tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let pointA = null, pointB = null;
+    let markerA, markerB;
+    let routingControl = null;
+
+    // Get current location as Point A
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition((pos) => {
+        pointA = [pos.coords.latitude, pos.coords.longitude];
+        document.getElementById("pointA").innerText = pointA.join(", ");
+        markerA = L.marker(pointA).addTo(map).bindPopup("Point A (You)").openPopup();
+        map.setView(pointA, 14);
+      }, () => {
+        document.getElementById("pointA").innerText = "Location unavailable";
+      }, { enableHighAccuracy: true });
+    }
+
+    // Select Point B by clicking map
+    map.on('click', function(e) {
+      if (!pointA) {
+        alert("Waiting for Point A (your location). Please allow GPS.");
+        return;
+      }
+
+      if (markerB) map.removeLayer(markerB);
+      pointB = [e.latlng.lat, e.latlng.lng];
+      markerB = L.marker(pointB).addTo(map).bindPopup("Point B").openPopup();
+      document.getElementById("pointB").innerText = pointB.join(", ");
+
+      // Draw route
+      if (routingControl) map.removeControl(routingControl);
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(pointA[0], pointA[1]),
+          L.latLng(pointB[0], pointB[1])
+        ],
+        routeWhileDragging: false,
+        show: false
+      }).on('routesfound', function(e) {
+        let summary = e.routes[0].summary;
+        let distKm = (summary.totalDistance / 1000).toFixed(2);
+        document.getElementById("calcDist").innerText = distKm;
+        document.getElementById("confirmBtn").style.display = "inline-block"; // Show confirm
+      }).addTo(map);
+    });
+
+    // Confirm button action
+    document.getElementById("confirmBtn").addEventListener("click", () => {
+      const result = {
+        pointA: pointA,
+        pointB: pointB,
+        calculatingDistance: document.getElementById("calcDist").innerText
+      };
+      alert("Route confirmed:\n" + JSON.stringify(result, null, 2));
+      // 👉 replace alert() with fetch("YOUR_POWER_AUTOMATE_URL", {...}) later
+    });
+  </script>
+</body>
+</html>
