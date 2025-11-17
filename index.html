@@ -1,80 +1,657 @@
+
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <title>Car Control Route</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3/dist/maplibre-gl.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <style>
-    #map { height: 90vh; width: 100%; }
-    #info { padding: 10px; }
+    #map { height: 60vh; width: 100%; position: relative; }
+    #info { 
+      padding: 10px; 
+      display: flex; 
+      gap: 20px; 
+      align-items: flex-start;
+    }
+    #info-left {
+      flex: 1;
+      min-width: 250px;
+    }
+    #info-right {
+      flex: 1;
+      min-width: 300px;
+    }
     #confirmBtn { display: none; padding: 8px 14px; margin-top: 10px; }
+    .suggested-locations { 
+      padding: 10px; 
+      background: #f5f5f5; 
+      border-radius: 5px; 
+      height: 100%;
+    }
+    .suggested-locations h3 { margin-top: 0; }
+    #locationList {
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .location-item { 
+      padding: 5px; 
+      margin: 5px 0; 
+      cursor: pointer; 
+      background: white; 
+      border-radius: 3px;
+      transition: background 0.2s;
+    }
+    .location-item:hover { background: #e3f2fd; }
+    .location-item.from-list {
+      border-left: 3px solid #2196F3;
+    }
+    .location-item.from-online {
+      border-left: 3px solid #4CAF50;
+    }
+    .location-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-left: 8px;
+      font-weight: normal;
+    }
+    .badge-list {
+      background: #2196F3;
+      color: white;
+    }
+    .badge-online {
+      background: #4CAF50;
+      color: white;
+    }
+    .loading-indicator {
+      color: #666;
+      padding: 10px;
+      font-style: italic;
+    }
+    .factory-marker {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+    }
+    .factory-marker-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .factory-marker-name {
+      background-color: rgba(255, 255, 255, 0.95);
+      color: #000;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+      margin-top: 2px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      border: 1px solid #2196F3;
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      transform: translateZ(0);
+      backface-visibility: hidden;
+    }
+    .mapboxgl-popup-content {
+      padding: 10px;
+    }
   </style>
 </head>
+
 <body>
   <h2>Select Your Route</h2>
   <div id="map"></div>
   <div id="info">
-    <p>Point A: <span id="pointA">Locating...</span></p>
-    <p>Point B: <span id="pointB">Not selected</span></p>
-    <p>Calculated Distance: <span id="calcDist">0</span> km</p>
-    <button id="confirmBtn">Confirm Route</button>
+    <div id="info-left">
+      <p>Point A: <span id="pointA">Locating...</span></p>
+      <p>Point B: <span id="pointB">Not selected</span></p>
+      <p>Calculated Distance: <span id="calcDist">0</span> km</p>
+      <button id="confirmBtn">Confirm Route</button>
+    </div>
+    <div id="info-right">
+      <div class="suggested-locations">
+        <h3>Search Locations</h3>
+        <input type="text" id="locationSearch" placeholder="Search for a location name..." style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+        <div id="locationList"></div>
+      </div>
+    </div>
   </div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@3/dist/maplibre-gl.js"></script>
 
   <script>
-    let map = L.map('map').setView([10.82, 106.68], 12); // Default center: Binh Duong
-
-    // Base map tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+    // Initialize MapLibre GL JS map
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {
+          'osm-tiles': {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            attribution: '© OpenStreetMap contributors'
+          }
+        },
+        layers: [{
+          id: 'osm-tiles-layer',
+          type: 'raster',
+          source: 'osm-tiles',
+          minzoom: 0,
+          maxzoom: 22
+        }]
+      },
+      center: [106.68, 10.82], // [lng, lat] for MapLibre
+      zoom: 12
+    });
 
     let pointA = null, pointB = null;
     let markerA, markerB;
-    let routingControl = null;
+    let routeLayer = null;
+    let suggestedMarkers = [];
 
-    // Get current location as Point A
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        pointA = [pos.coords.latitude, pos.coords.longitude];
-        document.getElementById("pointA").innerText = pointA.join(", ");
-        markerA = L.marker(pointA).addTo(map).bindPopup("Point A (You)").openPopup();
-        map.setView(pointA, 14);
-      }, () => {
-        document.getElementById("pointA").innerText = "Location unavailable";
-      }, { enableHighAccuracy: true });
+    // List of suggested locations - customize with your locations
+    const suggestedLocations = [
+    { name : "Au Viet Furniture Co., Ltd", lat:10.182521, lng:106.331657},
+        { name : "Công ty TNHH Rayten Việt Nam", lat:10.868847, lng:106.9311306},
+        { name : "Công ty Glory Oceanic xưởng Sofa", lat:11.0910682, lng:106.7594223},
+        { name : "Shijie", lat:10.9958889, lng:106.7268889},
+        { name : "", lat:11.135836, lng:106.5254686},
+        { name : "Cty ViewFull", lat:11.1962525, lng:106.712551},
+        { name : "dung dang", lat:11.051341, lng:106.781815},
+        { name : "Xin Wang", lat:11.1353827, lng:106.5215759},
+        { name : "LM 2", lat:10.8443272, lng:106.9276679},
+        { name : "", lat:11.1171111, lng:106.7445556},
+        { name : "Liên Nghị", lat:11.3386111, lng:106.7732222},
+        { name : "King Jade Co.,Ltd", lat:11.0298846, lng:106.660046},
+        { name : "Hoang di", lat:11.1393139, lng:106.5749074},
+        { name : "AN THINH", lat:11.1351529, lng:106.7200586},
+        { name : "Hong De", lat:11.1316389, lng:106.5231944},
+        { name : "PHU DU", lat:11.05266, lng:106.7553482},
+        { name : "BW Supply Chain City (BW SCC) - Office", lat:11.0662017, lng:106.6700739},
+        { name : "", lat:10.9846111, lng:106.9021111},
+        { name : "Công ty yuan chen", lat:11.056493, lng:106.732628},
+        { name : "Mộc Hoàng Lâm (last update)", lat:10.9846125, lng:106.9021149},
+        { name : "", lat:11.3386011, lng:106.7732315},
+        { name : "Phú Dự", lat:11.0525309, lng:106.7554314},
+        { name : "Ngọc Nga", lat:11.0619221, lng:106.8608551},
+        { name : "Yuu Yuu Furniture Co. Ltd", lat:11.1388126, lng:106.5504723},
+        { name : "Cat Nhon Industrial Complex", lat:13.962952, lng:109.1570888},
+        { name : "Công Ty Tnhh Một Thành Viên Phong Thuận Hòa", lat:10.991422, lng:106.7515594},
+        { name : "JYN YANG CO., LTD", lat:11.3879904, lng:106.5982165},
+        { name : "KIM HONG THANH CO.,LTD", lat:10.9991893, lng:106.7286153},
+        { name : "ZHI SHENG VIETNAM CO., LTD", lat:11.1356229, lng:106.5251172},
+        { name : "YUHONG VIETNAM FURNITURE", lat:11.1819994, lng:106.5194655},
+        { name : "YUAN LIN FURNITURE", lat:11.1352103, lng:106.5228001},
+        { name : "YU XING VIET NAM", lat:11.2570827, lng:106.6377307},
+        { name : "Yong Sheng Furniture Co. Ltd", lat:11.095702, lng:106.780892},
+        { name : "WIN WOOD VIETNAM COMPANY LIMITED", lat:11.0291465, lng:106.7430713},
+        { name : "WIN WOOD 2 VN CO LTD", lat:11.029238, lng:106.742769},
+        { name : "WELL KNOWN HOMEART ENTERPRISE Co., Ltd", lat:10.9307383, lng:106.7526781},
+        { name : "WANGFENG1 CO. LTD", lat:11.0289557, lng:106.7151923},
+        { name : "VINAFOR SAIGON JCO", lat:10.7914072, lng:106.687305},
+        { name : "VIETNAM SENYUAN COMPANY LTD", lat:11.1654523, lng:106.5336091},
+        { name : "VIETNAM KINGSMAN WOOD COMPANY LIMITED", lat:11.10144, lng:106.7795291},
+        { name : "Vietnam Hang Phong Furniture", lat:11.033691, lng:106.773598},
+        { name : "VIET THANG WOOD CO., LTD", lat:11.1392586, lng:106.5391099},
+        { name : "VIET NAM HANG LAM FURNITURE COMPANY LIMITED", lat:11.1387274, lng:106.623271},
+        { name : "VIEN LAM CO LTD", lat:11.0391233, lng:106.7577911},
+        { name : "United Jumbo", lat:10.9581061, lng:107.2364068},
+        { name : "TUONG AN WOOD PRODUCTION", lat:11.0908573, lng:106.5470395},
+        { name : "TRENDEX CO. LTD", lat:11.0256304, lng:106.6967171},
+        { name : "Tran Vuong 3/ Phu Du", lat:11.0525278, lng:106.7554444},
+        { name : "Tinh Nhat Pham", lat:11.04128, lng:106.75425},
+        { name : "TIEN TRIEN VIETNAM CO. LTD", lat:11.069502, lng:106.7610772},
+        { name : "THUONG MY FURNITURE CO., LTD", lat:11.0256757, lng:106.7267127},
+        { name : "THE COUNTRY CO. LTD", lat:10.7229146, lng:106.9224858},
+        { name : "THANH THANH", lat:11.102827, lng:106.775444},
+        { name : "THANG LOI ENTERPRISE", lat:13.782303, lng:109.112134},
+        { name : "TAM ICH MOT ONE MEMBER COMPANY LIMITED", lat:11.082876, lng:106.736389},
+        { name : "SUNRISE MANUFACTURE CONSTRUCTION & TRADING", lat:11.1421777, lng:106.5496337},
+        { name : "Shun Hong Co. LTD", lat:11.0604292, lng:106.7363368},
+        { name : "SHING MARK VIETNAM ENTERPRISES CO LTD", lat:10.946526, lng:107.0258933},
+        { name : "SEN CHENG WOOD CO.LTD", lat:11.0978727, lng:106.7829724},
+        { name : "SAM WELL FURNITURE CO LTD", lat:11.1983008, lng:106.7215115},
+        { name : "RK RESOURCES CO LTD", lat:11.2379947, lng:106.6361381},
+        { name : "PORA CO LTD", lat:11.096596, lng:106.581326},
+        { name : "Phuoc Hung", lat:13.7523294, lng:109.150689},
+        { name : "PHU TAI BINH DINH WOOD COMPANY LIMITTED", lat:13.965257, lng:109.1583874},
+        { name : "PHAN LE PRODUCTION COMPANY LIMITED", lat:10.9704732, lng:106.7334531},
+        { name : "Peng Yuan", lat:11.1364558, lng:106.5271172},
+        { name : "OU CHANG WOOD CO., LTD", lat:11.0605678, lng:106.7537854},
+        { name : "OMAY VIET NAM WOOD CO.,LTD", lat:11.053401, lng:106.7802572},
+        { name : "NS MILLENNIUM VIETNAM COMPANY LIMITED", lat:11.2472475, lng:106.620389},
+        { name : "NGU KIM TAM THINH LIMITED LIABILITY COMPANY", lat:10.9274201, lng:106.7580128},
+        { name : "Ngu Kim Huang Ding", lat:11.2002068, lng:106.7112931},
+        { name : "MU CHENG YE WOOD CO., LTD", lat:11.469221, lng:106.877001},
+        { name : "MOTOMOTION VIETNAM LIMITED COMPANY", lat:11.11712, lng:106.650195},
+        { name : "MOC HOANG LAM CO., LTD", lat:10.9847324, lng:106.9040535},
+        { name : "Ming Ze Furniture Co., Ltd", lat:11.204168, lng:106.7102861},
+        { name : "MING YOU FURNITURE CO. LTD", lat:11.037182, lng:106.7585422},
+        { name : "MASTER CRAFT VN FURNITURE CO LTD", lat:11.0278992, lng:106.7156909},
+        { name : "LONG WEATLH WOOD CO.,", lat:11.229429, lng:106.6881014},
+        { name : "LEHOO CÔNG TY TNHH SX-TM LỢI HÀO VIỆT NAM (2nd Factory)", lat:11.0850373, lng:106.7748737},
+        { name : "LOCTEK ERGONOMICS VN", lat:10.4753739, lng:106.3093686},
+        { name : "Lien Nghi", lat:11.3389034, lng:106.7728577},
+        { name : "LINHAI FURNITURE CO. LTD", lat:10.996822, lng:106.7211079},
+        { name : "Lien Phong", lat:10.938546, lng:106.772423},
+        { name : "LEATHER MASTER CO.,LTD", lat:10.8665361, lng:106.9309398},
+        { name : "LAP DAT FURNITURE CO. LTD", lat:10.9963328, lng:106.7166689},
+        { name : "Kingston Industry Viet Nam Ltd", lat:13.7797355, lng:109.1446228},
+        { name : "KIM HONG THANH CO.,LTD", lat:11.0001035, lng:106.7293966},
+        { name : "KHOI TRI FURNITURE CO LTD", lat:11.013895, lng:106.7709968},
+        { name : "KHANG THINH PHAT CO., LTD", lat:10.7689256, lng:106.6462268},
+        { name : "KHANG SHENG WOOD CO.LTD", lat:11.0792936, lng:106.7499957},
+        { name : "KAIRUI ENTERPRISES VIET NAM COMPANY LIMITED", lat:10.9856238, lng:106.6888777},
+        { name : "JING BO VIET NAM CO., LTD.", lat:11.0958301, lng:106.7826584},
+        { name : "JIA HUA VIETNAM LIMITED COMPANY", lat:11.1359522, lng:106.5208069},
+        { name : "JIA DING INDUSTRY CO LTD", lat:11.134156, lng:106.51998},
+        { name : "HOP THANG INTERIOR WOOD COMPANY LIMITED", lat:11.0919932, lng:106.7794523},
+        { name : "HONG VAN COMPANY LIMITED", lat:11.201811, lng:106.709936},
+        { name : "HONG MEI VN CO LTD", lat:11.100485, lng:106.7882697},
+        { name : "HONG FU VIETNAM CO LTD", lat:11.065062, lng:106.7672678},
+        { name : "Hoang Giang", lat:13.790416, lng:109.115333},
+        { name : "Hoang Gia", lat:13.9701408, lng:109.1593881},
+        { name : "Hoa Thanh Co., Ltd", lat:11.004393, lng:106.7382447},
+        { name : "Hoa Huong Duong Furniture Co. Ltd.", lat:11.0382941, lng:106.744301},
+        { name : "Hieu Long", lat:11.0092488, lng:106.8902753},
+        { name : "HARMOOR VIETNAM CO., LTD", lat:11.382358, lng:106.83242},
+        { name : "HAPPY SMART VIETNAM", lat:11.1563777, lng:106.7118225},
+        { name : "Happy Furniture VN (Quang Ngai)", lat:15.2193557, lng:108.7974618},
+        { name : "HAPPY FURNITURE Co. Ltd", lat:10.8689031, lng:106.9488677},
+        { name : "GUAN RUI FURNITURE VN CO., Ltd", lat:11.2106494, lng:106.7076059},
+        { name : "GRAND WOOD Co., ltd", lat:11.0924265, lng:106.7626483},
+        { name : "GOLDEN LAND FURNITURE VIETNAM", lat:11.0160261, lng:106.7708212},
+        { name : "GOLD STAR PRODUCTION", lat:13.7350483, lng:109.1573651},
+        { name : "Glory Oceanic ( Vietnam) 1/ 2/3", lat:11.0926446, lng:106.76266},
+        { name : "FENG SENG CO., LTD", lat:11.0175452, lng:106.7663726},
+        { name : "FENG HENG METAL PRODUCTS CO., LTD", lat:11.1057357, lng:106.8370377},
+        { name : "EFS FURNITURE VIETNAM CO LTD", lat:11.0755411, lng:106.7460813},
+        { name : "DUC TOAN BINH DINH COMPANY LIMITED", lat:13.831821, lng:109.2694288},
+        { name : "DING SHENG VIETNAM CO", lat:11.0940638, lng:106.5554428},
+        { name : "DAI THANH FURNITURE JSC", lat:13.7364079, lng:109.1530714},
+        { name : "COUNTRY WOOD FURNITURE 2", lat:11.334761, lng:106.60058},
+        { name : "COUNTRY WOOD FURNITURE", lat:11.3371151, lng:106.6017577},
+        { name : "COMFORT BEDDING COMPANY LIMITED", lat:11.0566942, lng:106.7487178},
+        { name : "CHUNG THAM INTL CO LTD", lat:11.064825, lng:106.7593339},
+        { name : "CHUANG YUAN VIETNAM CO LTD", lat:11.1367608, lng:106.5287161},
+        { name : "CHENGYE WOOD CO LTD", lat:11.0613328, lng:106.752412},
+        { name : "CHANGFENG COMPANY LIMITED", lat:11.0854576, lng:106.5652273},
+        { name : "CAMHA JOINT STOCK COMPANY", lat:15.8828595, lng:108.2960435},
+        { name : "BO MEI", lat:11.0672461, lng:106.8160802},
+        { name : "AAA Furniture co,. Ltd", lat:11.030188, lng:106.934629},
+        { name : "AN VIET COMPANY LIMITED", lat:10.925512, lng:106.7788348},
+        { name : "Anh Khoa Co., LTD", lat:10.9260277, lng:106.781401},
+        { name : "BA NHAT RATTAN BAMBOO", lat:11.0796032, lng:106.7868352}
+
+    ];
+
+    // Function to create custom factory marker element
+    function createFactoryMarkerElement(locationName) {
+      const displayName = locationName || "Factory";
+      const el = document.createElement('div');
+      el.className = 'factory-marker';
+      el.innerHTML = `
+        <div class="factory-marker-content">
+          <i class="fas fa-industry" style="color: #2196F3; font-size: 24px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);"></i>
+          <div class="factory-marker-name">${displayName}</div>
+        </div>
+      `;
+      return el;
     }
 
-    // Select Point B by clicking map
-    map.on('click', function(e) {
+    // Function to clear all suggested markers from map
+    function clearSuggestedMarkers() {
+      suggestedMarkers.forEach(marker => {
+        marker.remove();
+      });
+      suggestedMarkers = [];
+    }
+
+    // Function to calculate match score for search
+    function calculateMatchScore(location, searchQuery) {
+      if (!searchQuery || searchQuery.trim() === "") return 0;
+      
+      const query = searchQuery.toLowerCase().trim();
+      const name = (location.name || "").toLowerCase();
+      
+      if (name === query) return 100; // Exact match
+      if (name.startsWith(query)) return 80; // Starts with
+      if (name.includes(query)) return 60; // Contains
+      
+      // Word-based matching
+      const queryWords = query.split(/\s+/);
+      const nameWords = name.split(/\s+/);
+      let wordMatches = 0;
+      queryWords.forEach(qWord => {
+        if (nameWords.some(nWord => nWord.startsWith(qWord) || nWord.includes(qWord))) {
+          wordMatches++;
+        }
+      });
+      if (wordMatches > 0) return 40 + (wordMatches / queryWords.length) * 20;
+      
+      return 0;
+    }
+
+    // Function to search online using Nominatim API
+    async function searchOnlineLocations(searchQuery) {
+      try {
+        // Use Nominatim (OpenStreetMap) geocoding API
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=5&countrycodes=vn&addressdetails=1`;
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'CarRouteApp/1.0'
+          }
+        });
+        
+        if (!response.ok) {
+          return [];
+        }
+        
+        const data = await response.json();
+        return data.map(result => ({
+          name: result.display_name,
+          lat: parseFloat(result.lat),
+          lng: parseFloat(result.lon),
+          source: 'online'
+        }));
+      } catch (error) {
+        console.error('Online search error:', error);
+        return [];
+      }
+    }
+
+    // Function to add location to map and list
+    function addLocationToDisplay(location, isFromList = false) {
+      const locationList = document.getElementById("locationList");
+      
+      // Create custom marker element
+      const el = createFactoryMarkerElement(location.name);
+      
+      // Add marker to map using MapLibre
+      const marker = new maplibregl.Marker(el)
+        .setLngLat([location.lng, location.lat]) // [lng, lat] for MapLibre
+        .setPopup(new maplibregl.Popup({ offset: 25 })
+          .setHTML(`<b>${location.name || "Location"}</b><br>Click to select as Point B`))
+        .addTo(map);
+
+      // Add click handler
+      el.addEventListener('click', () => {
+        selectSuggestedLocation(location);
+      });
+
+      suggestedMarkers.push(marker);
+
+      // Add to list
+      const item = document.createElement("div");
+      item.className = `location-item ${isFromList ? 'from-list' : 'from-online'}`;
+      
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = location.name || "Unnamed Location";
+      
+      const badge = document.createElement("span");
+      badge.className = `location-badge ${isFromList ? 'badge-list' : 'badge-online'}`;
+      badge.textContent = isFromList ? "List" : "Online";
+      
+      item.appendChild(nameSpan);
+      item.appendChild(badge);
+      item.onclick = () => selectSuggestedLocation(location);
+      locationList.appendChild(item);
+    }
+
+    // Function to search and display matching locations
+    async function searchAndDisplayLocations(searchQuery) {
+      clearSuggestedMarkers();
+      const locationList = document.getElementById("locationList");
+      locationList.innerHTML = "";
+
+      if (!searchQuery || searchQuery.trim() === "") {
+        return;
+      }
+
+      // Show loading indicator
+      const loadingDiv = document.createElement("div");
+      loadingDiv.className = "loading-indicator";
+      loadingDiv.textContent = "Searching...";
+      locationList.appendChild(loadingDiv);
+
+      // Get top 5 from existing list
+      const scoredLocations = suggestedLocations
+        .map(location => ({
+          location: location,
+          score: calculateMatchScore(location, searchQuery)
+        }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5); // Top 5 results
+
+      // Clear loading and add list results
+      locationList.innerHTML = "";
+
+      // Add top 5 from list
+      scoredLocations.forEach(({ location }) => {
+        addLocationToDisplay(location, true);
+      });
+
+      // Search online and add results
+      const onlineResults = await searchOnlineLocations(searchQuery);
+      onlineResults.forEach(location => {
+        // Check if this online result is already in our list (avoid duplicates)
+        const isDuplicate = suggestedMarkers.some(marker => {
+          const markerLngLat = marker.getLngLat();
+          const markerLat = markerLngLat.lat;
+          const markerLng = markerLngLat.lng;
+          const distance = Math.sqrt(
+            Math.pow(markerLat - location.lat, 2) + 
+            Math.pow(markerLng - location.lng, 2)
+          );
+          return distance < 0.001; // Very close coordinates (same location)
+        });
+        
+        if (!isDuplicate) {
+          addLocationToDisplay(location, false);
+        }
+      });
+
+      // Show message if no results
+      if (suggestedMarkers.length === 0) {
+        locationList.innerHTML = "<p style='color: #666; padding: 10px;'>No matching locations found.</p>";
+        return;
+      }
+
+      // Fit map to show all markers
+      if (suggestedMarkers.length > 0) {
+        const bounds = new maplibregl.LngLatBounds();
+        suggestedMarkers.forEach(marker => {
+          bounds.extend(marker.getLngLat());
+        });
+        map.fitBounds(bounds, { padding: 50 });
+      }
+    }
+
+    // Function to add suggested locations to map (deprecated, kept for compatibility)
+    function addSuggestedLocations() {
+      // This function is no longer used, but kept for backward compatibility
+      // Search functionality is now handled by searchAndDisplayLocations
+    }
+
+    // Function to calculate route using OSRM
+    async function calculateRoute(start, end) {
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+          return {
+            geometry: data.routes[0].geometry,
+            distance: data.routes[0].distance,
+            duration: data.routes[0].duration
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error('Routing error:', error);
+        return null;
+      }
+    }
+
+    // Function to draw route on map
+    function drawRoute(route) {
+      // Remove existing route layer
+      if (routeLayer) {
+        if (map.getLayer('route')) {
+          map.removeLayer('route');
+        }
+        if (map.getSource('route')) {
+          map.removeSource('route');
+        }
+      }
+
+      // Add route source and layer (only if map is loaded)
+      if (!map.loaded()) {
+        map.once('load', () => drawRoute(route));
+        return;
+      }
+
+      map.addSource('route', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: route.geometry
+        }
+      });
+
+      map.addLayer({
+        id: 'route',
+        type: 'line',
+        source: 'route',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        paint: {
+          'line-color': '#2196F3',
+          'line-width': 4
+        }
+      });
+
+      routeLayer = true;
+    }
+
+    // Add navigation controls
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+    // Function to select a suggested location as Point B
+    async function selectSuggestedLocation(location) {
       if (!pointA) {
         alert("Waiting for Point A (your location). Please allow GPS.");
         return;
       }
 
-      if (markerB) map.removeLayer(markerB);
-      pointB = [e.latlng.lat, e.latlng.lng];
-      markerB = L.marker(pointB).addTo(map).bindPopup("Point B").openPopup();
-      document.getElementById("pointB").innerText = pointB.join(", ");
+      if (markerB) markerB.remove();
+      pointB = [location.lat, location.lng];
+      
+      // Create Point B marker
+      const markerBEl = document.createElement('div');
+      markerBEl.innerHTML = '<i class="fas fa-map-marker-alt" style="color: #f44336; font-size: 32px;"></i>';
+      markerB = new maplibregl.Marker(markerBEl)
+        .setLngLat([location.lng, location.lat])
+        .setPopup(new maplibregl.Popup({ offset: 25 })
+          .setHTML(`Point B: ${location.name}`))
+        .addTo(map);
+      markerB.togglePopup();
+      
+      document.getElementById("pointB").innerText = `${location.name} (${pointB.join(", ")})`;
 
-      // Draw route
-      if (routingControl) map.removeControl(routingControl);
-      routingControl = L.Routing.control({
-        waypoints: [
-          L.latLng(pointA[0], pointA[1]),
-          L.latLng(pointB[0], pointB[1])
-        ],
-        routeWhileDragging: false,
-        show: false
-      }).on('routesfound', function(e) {
-        let summary = e.routes[0].summary;
-        let distKm = (summary.totalDistance / 1000).toFixed(2);
+      // Calculate and draw route
+      const route = await calculateRoute([pointA[1], pointA[0]], [pointB[1], pointB[0]]);
+      if (route) {
+        drawRoute(route);
+        const distKm = (route.distance / 1000).toFixed(2);
         document.getElementById("calcDist").innerText = distKm;
-        document.getElementById("confirmBtn").style.display = "inline-block"; // Show confirm
-      }).addTo(map);
+        document.getElementById("confirmBtn").style.display = "inline-block";
+      } else {
+        alert("Could not calculate route. Please try again.");
+      }
+    }
+
+    // Setup search input event listener
+    const searchInput = document.getElementById("locationSearch");
+    let searchTimeout;
+    searchInput.addEventListener("input", function(e) {
+      clearTimeout(searchTimeout);
+      const query = e.target.value;
+      searchTimeout = setTimeout(() => {
+        searchAndDisplayLocations(query);
+      }, 300); // Debounce search by 300ms
+    });
+
+    // Wait for map to load before adding markers
+    map.on('load', function() {
+      // Get current location as Point A
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          pointA = [pos.coords.latitude, pos.coords.longitude];
+          document.getElementById("pointA").innerText = pointA.join(", ");
+          
+          // Create Point A marker
+          const markerAEl = document.createElement('div');
+          markerAEl.innerHTML = '<i class="fas fa-map-marker-alt" style="color: #4CAF50; font-size: 32px;"></i>';
+          markerA = new maplibregl.Marker(markerAEl)
+            .setLngLat([pos.coords.longitude, pos.coords.latitude])
+            .setPopup(new maplibregl.Popup({ offset: 25 })
+              .setHTML("Point A (You)"))
+            .addTo(map);
+          markerA.togglePopup();
+          
+          map.setCenter([pos.coords.longitude, pos.coords.latitude]);
+          map.setZoom(14);
+        }, () => {
+          document.getElementById("pointA").innerText = "Location unavailable";
+        }, { enableHighAccuracy: true });
+      }
+
+      // Select Point B by clicking map
+      map.on('click', async function(e) {
+        if (!pointA) {
+          alert("Waiting for Point A (your location). Please allow GPS.");
+          return;
+        }
+
+        if (markerB) markerB.remove();
+        pointB = [e.lngLat.lat, e.lngLat.lng];
+        
+        // Create Point B marker
+        const markerBEl = document.createElement('div');
+        markerBEl.innerHTML = '<i class="fas fa-map-marker-alt" style="color: #f44336; font-size: 32px;"></i>';
+        markerB = new maplibregl.Marker(markerBEl)
+          .setLngLat([e.lngLat.lng, e.lngLat.lat])
+          .setPopup(new maplibregl.Popup({ offset: 25 })
+            .setHTML("Point B"))
+          .addTo(map);
+        markerB.togglePopup();
+        
+        document.getElementById("pointB").innerText = pointB.join(", ");
+
+        // Calculate and draw route
+        const route = await calculateRoute([pointA[1], pointA[0]], [pointB[1], pointB[0]]);
+        if (route) {
+          drawRoute(route);
+          const distKm = (route.distance / 1000).toFixed(2);
+          document.getElementById("calcDist").innerText = distKm;
+          document.getElementById("confirmBtn").style.display = "inline-block";
+        } else {
+          alert("Could not calculate route. Please try again.");
+        }
+      });
     });
 
     // Confirm button action
