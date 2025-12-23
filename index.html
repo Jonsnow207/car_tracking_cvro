@@ -3,7 +3,9 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Car Control Route</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -13,74 +15,163 @@
     * {
       box-sizing: border-box;
     }
-    body {
+    html, body {
       margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
       font-family: "Segoe UI", Arial, sans-serif;
       background: #fafafa;
       color: #222;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      position: fixed;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
     }
     h2 {
-      margin: 16px 12px 8px;
-      font-size: 26px;
+      margin: 8px 12px;
+      padding: 0;
+      font-size: 20px;
+      flex-shrink: 0;
     }
-    #map { height: 60vh; width: 100%; position: relative; }
+    .banner {
+      background: #e3f2fd;
+      padding: 8px 12px;
+      border-left: 4px solid #2196F3;
+      margin: 0;
+      font-size: 13px;
+      flex-shrink: 0;
+      line-height: 1.4;
+    }
+    #map { 
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      position: relative;
+      background: #f0f0f0;
+    }
     #info { 
-      padding: 10px 20px; 
+      padding: 8px 10px; 
       display: flex; 
-      gap: 20px; 
-      align-items: flex-start;
+      gap: 10px;
       flex-wrap: wrap;
+      background: #fff;
+      border-top: 1px solid #ddd;
+      flex-shrink: 0;
+      max-height: 35vh;
+      overflow-y: auto;
     }
     #info-left {
       flex: 1;
-      min-width: 250px;
+      min-width: 140px;
+      font-size: 13px;
+    }
+    #info-left p {
+      margin: 4px 0;
+      word-break: break-word;
     }
     #info-right {
       flex: 1;
-      min-width: 300px;
+      min-width: 160px;
     }
-    #confirmBtn { display: none; padding: 10px 18px; margin-top: 10px; border: none; background: #2196F3; color: #fff; border-radius: 4px; font-size: 15px; cursor: pointer; }
-    #routeLoading { display: none; color: #666; font-size: 14px; margin-top: 10px; }
-    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #f3f3f3; border-top: 2px solid #2196F3; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+    #confirmBtn { 
+      padding: 8px 14px; 
+      margin-top: 8px; 
+      border: none; 
+      background: #2196F3; 
+      color: #fff; 
+      border-radius: 4px; 
+      font-size: 14px; 
+      font-weight: 600;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+      min-height: 44px;
+      display: none;
+      width: 100%;
+    }
+    #routeLoading { 
+      display: none; 
+      color: #666; 
+      font-size: 13px; 
+      margin-top: 8px;
+    }
+    .spinner { 
+      display: inline-block; 
+      width: 12px; 
+      height: 12px; 
+      border: 2px solid #f3f3f3; 
+      border-top: 2px solid #2196F3; 
+      border-radius: 50%; 
+      animation: spin 0.6s linear infinite; 
+      margin-right: 6px; 
+      vertical-align: middle; 
+    }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .suggested-locations { 
-      padding: 10px; 
+      padding: 8px; 
       background: #f5f5f5; 
-      border-radius: 5px; 
-      height: 100%;
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
     }
-    .suggested-locations h3 { margin-top: 0; }
+    .suggested-locations h3 { 
+      margin: 0 0 6px 0; 
+      font-size: 14px;
+    }
+    #locationSearch {
+      width: 100%;
+      padding: 7px;
+      margin-bottom: 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+      -webkit-appearance: none;
+      appearance: none;
+      flex-shrink: 0;
+    }
     #locationList {
-      max-height: 400px;
+      flex: 1;
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .location-item { 
-      padding: 8px 10px; 
-      margin: 6px 0; 
+      padding: 7px 8px; 
+      margin: 4px 0; 
       cursor: pointer; 
       background: white; 
-      border-radius: 4px;
+      border-radius: 3px;
       transition: background 0.2s;
+      border-left: 3px solid #ccc;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(33, 150, 243, 0.1);
     }
     .location-item-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      gap: 6px;
       font-weight: 600;
+      font-size: 13px;
     }
-    .location-item:hover { background: #e3f2fd; }
+    .location-item:active { background: #e3f2fd; }
     .location-item.from-list {
-      border-left: 3px solid #2196F3;
+      border-left-color: #2196F3;
     }
     .location-item.from-online {
-      border-left: 3px solid #4CAF50;
+      border-left-color: #4CAF50;
     }
     .location-badge {
       font-size: 10px;
-      padding: 2px 6px;
+      padding: 2px 5px;
       border-radius: 3px;
-      margin-left: 8px;
+      margin-left: 6px;
       font-weight: normal;
     }
     .badge-list {
@@ -92,93 +183,141 @@
       color: white;
     }
     .location-address {
-      font-size: 12px;
-      color: #555;
-      margin-top: 4px;
+      font-size: 11px;
+      color: #666;
+      margin-top: 3px;
       word-break: break-word;
     }
     .loading-indicator {
       color: #666;
-      padding: 10px;
+      padding: 8px;
       font-style: italic;
-    }
-    .factory-marker {
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      width: 48px;
-      height: 48px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transform: translate(-24px, -48px);
-      pointer-events: auto;
-    }
-    .factory-marker-content {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      color: #f44336;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.4);
-    }
-    .factory-marker-icon {
-      font-size: 40px;
-      line-height: 1;
-    }
-    .factory-marker-name {
-      margin-top: 2px;
-      background: rgba(0,0,0,0.75);
-      color: #fff;
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-      max-width: 140px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      font-size: 13px;
     }
     .leaflet-popup-content {
-      padding: 10px;
+      padding: 8px;
+      font-size: 13px;
     }
-    @media (max-width: 900px) {
+    .leaflet-popup-content button {
+      min-height: 40px;
+      font-size: 12px;
+    }
+    
+    /* Touch-friendly adjustments */
+    .leaflet-control-container {
+      font-size: 12px;
+    }
+    .leaflet-routing-container {
+      display: none;
+    }
+    
+    /* Landscape orientation */
+    @media (orientation: landscape) {
+      h2 {
+        font-size: 18px;
+        margin: 6px 12px;
+      }
+      .banner {
+        font-size: 12px;
+        padding: 6px 12px;
+      }
       #map {
-        height: 55vh;
+        min-height: 200px;
+      }
+      #info {
+        max-height: 40vh;
+        padding: 6px 8px;
+      }
+      #confirmBtn {
+        padding: 6px 12px;
+        min-height: 40px;
+        font-size: 13px;
+      }
+    }
+    
+    /* Mobile screens */
+    @media (max-width: 768px) {
+      h2 {
+        font-size: 18px;
+        margin: 6px 12px;
+      }
+      #map {
+        min-height: 300px;
       }
       #info {
         flex-direction: column;
-        padding: 12px;
+        max-height: none;
       }
-      #info-left,
-      #info-right {
-        width: 100%;
+      #info-left {
         min-width: unset;
+        width: 100%;
+      }
+      #info-right {
+        min-width: unset;
+        width: 100%;
       }
       .suggested-locations {
-        height: auto;
+        min-height: 200px;
+        max-height: 250px;
       }
       #locationList {
-        max-height: 260px;
+        max-height: 200px;
       }
-    }
-    @media (max-width: 600px) {
-      h2 {
-        text-align: center;
-        font-size: 22px;
-      }
-      #map {
-        height: 50vh;
-      }
-      #confirmBtn,
-      #locationSearch {
+      #confirmBtn {
         width: 100%;
       }
+    }
+    
+    /* Small phones */
+    @media (max-width: 480px) {
+      body {
+        font-size: 14px;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 4px 8px;
+      }
+      .banner {
+        font-size: 11px;
+        padding: 5px 8px;
+      }
       #info {
-        gap: 12px;
+        padding: 6px;
+        gap: 8px;
+      }
+      #info-left {
+        font-size: 12px;
+      }
+      #info-left p {
+        margin: 3px 0;
       }
       .location-item {
-        font-size: 14px;
-        padding: 8px;
+        padding: 6px;
+        margin: 3px 0;
+      }
+      .location-item-header {
+        font-size: 12px;
+      }
+      .location-address {
+        font-size: 10px;
+      }
+      #confirmBtn {
+        min-height: 40px;
+        font-size: 13px;
+      }
+      .leaflet-popup-content {
+        font-size: 12px;
+        padding: 6px;
+      }
+    }
+    
+    /* iPad and tablets */
+    @media (min-width: 769px) and (max-width: 1024px) {
+      #map {
+        min-height: 400px;
+      }
+      #info {
+        max-height: 35vh;
       }
     }
   </style>
@@ -186,8 +325,8 @@
 
 <body>
   <h2>Select Your Route</h2>
-  <div style="background:#e3f2fd; padding:10px 20px; border-left:4px solid #2196F3; margin:0 0 10px 0;">
-    <strong>📍 How to use:</strong> Click any location on the map to drop a pin and auto-generate the location, or use search below.
+  <div class="banner">
+    📍 <strong>How to use:</strong> Click map to drop pins, or use search below.
   </div>
   <div id="map"></div>
   <div id="info">
@@ -791,6 +930,25 @@
       };
       alert("Route confirmed:\n" + JSON.stringify(result, null, 2));
       // 👉 replace alert() with fetch("YOUR_POWER_AUTOMATE_URL", {...}) later
+    });
+
+    // Prevent zoom on double-tap
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function(event) {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    }, false);
+
+    // Handle orientation changes
+    window.addEventListener('orientationchange', function() {
+      setTimeout(() => {
+        if (map) {
+          map.invalidateSize();
+        }
+      }, 100);
     });
 
     // Initialize the map when the page loads
