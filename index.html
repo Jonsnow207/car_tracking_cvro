@@ -3,16 +3,33 @@
 <html>
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Car Control Route</title>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3/dist/maplibre-gl.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #fafafa;
+      color: #222;
+    }
+    h2 {
+      margin: 16px 12px 8px;
+      font-size: 26px;
+    }
     #map { height: 60vh; width: 100%; position: relative; }
     #info { 
-      padding: 10px; 
+      padding: 10px 20px; 
       display: flex; 
       gap: 20px; 
       align-items: flex-start;
+      flex-wrap: wrap;
     }
     #info-left {
       flex: 1;
@@ -22,7 +39,10 @@
       flex: 1;
       min-width: 300px;
     }
-    #confirmBtn { display: none; padding: 8px 14px; margin-top: 10px; }
+    #confirmBtn { display: none; padding: 10px 18px; margin-top: 10px; border: none; background: #2196F3; color: #fff; border-radius: 4px; font-size: 15px; cursor: pointer; }
+    #routeLoading { display: none; color: #666; font-size: 14px; margin-top: 10px; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #f3f3f3; border-top: 2px solid #2196F3; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     .suggested-locations { 
       padding: 10px; 
       background: #f5f5f5; 
@@ -35,12 +55,19 @@
       overflow-y: auto;
     }
     .location-item { 
-      padding: 5px; 
-      margin: 5px 0; 
+      padding: 8px 10px; 
+      margin: 6px 0; 
       cursor: pointer; 
       background: white; 
-      border-radius: 3px;
+      border-radius: 4px;
       transition: background 0.2s;
+    }
+    .location-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-weight: 600;
     }
     .location-item:hover { background: #e3f2fd; }
     .location-item.from-list {
@@ -64,6 +91,12 @@
       background: #4CAF50;
       color: white;
     }
+    .location-address {
+      font-size: 12px;
+      color: #555;
+      margin-top: 4px;
+      word-break: break-word;
+    }
     .loading-indicator {
       color: #666;
       padding: 10px;
@@ -73,47 +106,97 @@
       background: transparent;
       border: none;
       cursor: pointer;
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform: translate(-24px, -48px);
+      pointer-events: auto;
     }
     .factory-marker-content {
       display: flex;
       flex-direction: column;
       align-items: center;
       text-align: center;
+      color: #f44336;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+    .factory-marker-icon {
+      font-size: 40px;
+      line-height: 1;
     }
     .factory-marker-name {
-      background-color: rgba(255, 255, 255, 0.95);
-      color: #000;
-      padding: 2px 6px;
+      margin-top: 2px;
+      background: rgba(0,0,0,0.75);
+      color: #fff;
+      padding: 1px 6px;
       border-radius: 4px;
       font-size: 11px;
-      font-weight: bold;
+      max-width: 140px;
       white-space: nowrap;
-      margin-top: 2px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      border: 1px solid #2196F3;
-      max-width: 150px;
       overflow: hidden;
       text-overflow: ellipsis;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-      transform: translateZ(0);
-      backface-visibility: hidden;
     }
-    .mapboxgl-popup-content {
+    .leaflet-popup-content {
       padding: 10px;
+    }
+    @media (max-width: 900px) {
+      #map {
+        height: 55vh;
+      }
+      #info {
+        flex-direction: column;
+        padding: 12px;
+      }
+      #info-left,
+      #info-right {
+        width: 100%;
+        min-width: unset;
+      }
+      .suggested-locations {
+        height: auto;
+      }
+      #locationList {
+        max-height: 260px;
+      }
+    }
+    @media (max-width: 600px) {
+      h2 {
+        text-align: center;
+        font-size: 22px;
+      }
+      #map {
+        height: 50vh;
+      }
+      #confirmBtn,
+      #locationSearch {
+        width: 100%;
+      }
+      #info {
+        gap: 12px;
+      }
+      .location-item {
+        font-size: 14px;
+        padding: 8px;
+      }
     }
   </style>
 </head>
 
 <body>
   <h2>Select Your Route</h2>
+  <div style="background:#e3f2fd; padding:10px 20px; border-left:4px solid #2196F3; margin:0 0 10px 0;">
+    <strong>📍 How to use:</strong> Click any location on the map to drop a pin and auto-generate the location, or use search below.
+  </div>
   <div id="map"></div>
   <div id="info">
     <div id="info-left">
-      <p>Point A: <span id="pointA">Locating...</span></p>
+      <p>Point A: <span id="pointA">Not selected</span></p>
       <p>Point B: <span id="pointB">Not selected</span></p>
       <p>Calculated Distance: <span id="calcDist">0</span> km</p>
       <button id="confirmBtn">Confirm Route</button>
+      <div id="routeLoading"><span class="spinner"></span>Calculating route...</div>
     </div>
     <div id="info-right">
       <div class="suggested-locations">
@@ -124,42 +207,165 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/maplibre-gl@3/dist/maplibre-gl.js"></script>
-
   <script>
-    // Initialize MapLibre GL JS map
-    const map = new maplibregl.Map({
-      container: 'map',
-      style: {
-        version: 8,
-        sources: {
-          'osm-tiles': {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors'
-          }
-        },
-        layers: [{
-          id: 'osm-tiles-layer',
-          type: 'raster',
-          source: 'osm-tiles',
-          minzoom: 0,
-          maxzoom: 22
-        }]
-      },
-      center: [106.68, 10.82], // [lng, lat] for MapLibre
-      zoom: 12
-    });
-
+    // Initialize Leaflet map
+    let map;
     let pointA = null, pointB = null;
     let markerA, markerB;
-    let routeLayer = null;
+    let routingControl = null;
     let suggestedMarkers = [];
+
+    function initMap() {
+      map = L.map('map').setView([10.82, 106.68], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+
+      // Map click: reverse-geocode then show popup with Set as A / Set as B
+      map.on('click', async function(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        const loc = await reverseGeocode(lat, lng);
+        showLocationPopup(lat, lng, loc.name, loc.address);
+      });
+    }
+
+    // Helper: reverse geocode using Nominatim (free, no API key needed)
+    async function reverseGeocode(lat, lng) {
+      try {
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+        const resp = await fetch(url, { headers: { 'User-Agent': 'CarRouteApp/1.0' } });
+        if (!resp.ok) throw new Error('Reverse geocode failed');
+        const data = await resp.json();
+        return {
+          name: data.display_name || `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`,
+          address: data.display_name || '',
+          lat, lng
+        };
+      } catch (err) {
+        console.warn('Reverse geocode error', err);
+        return {
+          name: `Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}`,
+          address: '',
+          lat, lng
+        };
+      }
+    }
+
+    // Show popup with Set as A / Set as B buttons
+    function showLocationPopup(lat, lng, name, address) {
+      const popupHtml = `
+        <div style="min-width:200px">
+          <b>${name}</b>
+          <div style="font-size:12px; color:#555; margin-top:6px; margin-bottom:8px;">${address}</div>
+          <div style="display:flex; gap:8px;">
+            <button class="popup-set-a" style="flex:1; padding:6px; background:#2196F3; color:white; border:none; border-radius:4px; cursor:pointer;">Set as Point A</button>
+            <button class="popup-set-b" style="flex:1; padding:6px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer;">Set as Point B</button>
+          </div>
+        </div>`;
+
+      const popup = L.popup({ maxWidth: 320 })
+        .setLatLng([lat, lng])
+        .setContent(popupHtml)
+        .openOn(map);
+
+      map.once('popupopen', function(e) {
+        const popupEl = e.popup.getElement();
+        if (!popupEl) return;
+        const btnA = popupEl.querySelector('.popup-set-a');
+        const btnB = popupEl.querySelector('.popup-set-b');
+        if (btnA) btnA.onclick = () => { setPointAFromLatLng(name, lat, lng); map.closePopup(); };
+        if (btnB) btnB.onclick = () => { setPointBFromLatLng(name, lat, lng); map.closePopup(); };
+      });
+    }
+
+    // Set Point A from coordinates
+    function setPointAFromLatLng(name, lat, lng) {
+      if (markerA) map.removeLayer(markerA);
+      pointA = [lat, lng];
+      const factoryIconA = L.icon({
+        iconUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB4PSI0IiB5PSIxNiIgd2lkdGg9IjI0IiBoZWlnaHQ9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiNkMzJmMmYiIHN0cm9rZS13aWR0aD0iMiIvPjxyZWN0IHg9IjYiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNkMzJmMmYiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iMTQiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNkMzJmMmYiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iMjIiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNkMzJmMmYiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iOCIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iMTAiIGZpbGw9IiNkMzJmMmYiLz48cmVjdCB4PSIyMiIgeT0iOCIgd2lkdGg9IjIiIGhlaWdodD0iOCIgZmlsbD0iI2QzMmYyZiIvPjwvc3ZnPg==',
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32]
+      });
+      markerA = L.marker(pointA, { icon: factoryIconA })
+        .addTo(map)
+        .bindPopup(`Point A: ${name}`)
+        .openPopup();
+      document.getElementById('pointA').innerText = `${name} (${pointA.join(', ')})`;
+      if (pointB) updateRoute();
+    }
+
+    // Set Point B from coordinates
+    function setPointBFromLatLng(name, lat, lng) {
+      if (!pointA) {
+        alert('Please set Point A first.');
+        return;
+      }
+      if (markerB) map.removeLayer(markerB);
+      pointB = [lat, lng];
+      const factoryIconB = L.icon({
+        iconUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB4PSI0IiB5PSIxNiIgd2lkdGg9IjI0IiBoZWlnaHQ9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMiIvPjxyZWN0IHg9IjYiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iMTQiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iMjIiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iOCIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iMTAiIGZpbGw9IiMwMDAiLz48cmVjdCB4PSIyMiIgeT0iOCIgd2lkdGg9IjIiIGhlaWdodD0iOCIgZmlsbD0iIzAwMCIvPjwvc3ZnPg==',
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32]
+      });
+      markerB = L.marker(pointB, { icon: factoryIconB })
+        .addTo(map)
+        .bindPopup(`Point B: ${name}`)
+        .openPopup();
+      document.getElementById('pointB').innerText = `${name} (${pointB.join(', ')})`;
+      updateRoute();
+    }
+
+    // Update route using OSRM (Open Source Routing Machine - free)
+    function updateRoute() {
+      if (!pointA || !pointB) return;
+
+      if (routingControl) {
+        map.removeControl(routingControl);
+      }
+
+      // Show loading indicator
+      document.getElementById('routeLoading').style.display = 'block';
+      document.getElementById('confirmBtn').style.display = 'none';
+
+      routingControl = L.Routing.control({
+        waypoints: [
+          L.latLng(pointA[0], pointA[1]),
+          L.latLng(pointB[0], pointB[1])
+        ],
+        router: L.Routing.osrmv1({ 
+          serviceUrl: 'https://router.project-osrm.org/route/v1',
+          timeout: 10000  // 10 second timeout
+        }),
+        lineOptions: {
+          styles: [{ color: '#2196F3', weight: 5, opacity: 0.8 }]
+        },
+        addWaypoints: false,
+        routeWhileDragging: false,
+        draggableWaypoints: false,
+        fitSelectedRoutes: true,
+        show: false
+      }).on('routesfound', function(e) {
+        // Hide loading indicator
+        document.getElementById('routeLoading').style.display = 'none';
+        document.getElementById('confirmBtn').style.display = 'inline-block';
+        
+        const summary = e.routes[0].summary;
+        const distKm = (summary.totalDistance / 1000).toFixed(2);
+        document.getElementById('calcDist').innerText = distKm;
+      }).on('routeerror', function(e) {
+        // Hide loading on error
+        document.getElementById('routeLoading').style.display = 'none';
+        console.error('Route error:', e);
+      }).addTo(map);
+    }
 
     // List of suggested locations - customize with your locations
     const suggestedLocations = [
-    { name : "Au Viet Furniture Co., Ltd", lat:10.182521, lng:106.331657},
+        { name : "Au Viet Furniture Co., Ltd", lat:10.182521, lng:106.331657},
         { name : "Công ty TNHH Rayten Việt Nam", lat:10.868847, lng:106.9311306},
         { name : "Công ty Glory Oceanic xưởng Sofa", lat:11.0910682, lng:106.7594223},
         { name : "Shijie", lat:10.9958889, lng:106.7268889},
@@ -293,49 +499,89 @@
 
     ];
 
-    // Function to create custom factory marker element
-    function createFactoryMarkerElement(locationName) {
-      const displayName = locationName || "Factory";
-      const el = document.createElement('div');
-      el.className = 'factory-marker';
-      el.innerHTML = `
-        <div class="factory-marker-content">
-          <i class="fas fa-industry" style="color: #2196F3; font-size: 24px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);"></i>
-          <div class="factory-marker-name">${displayName}</div>
-        </div>
-      `;
-      return el;
+    // Function to create custom Leaflet marker icon
+    function createFactoryIcon(locationName) {
+      return L.icon({
+        iconUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cmVjdCB4PSI0IiB5PSIxNiIgd2lkdGg9IjI0IiBoZWlnaHQ9IjEyIiBmaWxsPSJub25lIiBzdHJva2U9IiNGRjk4MDAiIHN0cm9rZS13aWR0aD0iMiIvPjxyZWN0IHg9IjYiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRjk4MDAiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iMTQiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRjk4MDAiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iMjIiIHk9IjE4IiB3aWR0aD0iNCIgaGVpZ2h0PSI4IiBmaWxsPSJub25lIiBzdHJva2U9IiNGRjk4MDAiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHJlY3QgeD0iOCIgeT0iNiIgd2lkdGg9IjIiIGhlaWdodD0iMTAiIGZpbGw9IiNGRjk4MDAiLz48cmVjdCB4PSIyMiIgeT0iOCIgd2lkdGg9IjIiIGhlaWdodD0iOCIgZmlsbD0iI0ZGOTgwMCIvPjwvc3ZnPg==',
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+        popupAnchor: [0, -32]
+      });
     }
 
     // Function to clear all suggested markers from map
     function clearSuggestedMarkers() {
       suggestedMarkers.forEach(marker => {
-        marker.remove();
+        map.removeLayer(marker);
       });
       suggestedMarkers = [];
     }
 
-    // Function to calculate match score for search
+    // Function to calculate match score for search (checks both name and address)
     function calculateMatchScore(location, searchQuery) {
       if (!searchQuery || searchQuery.trim() === "") return 0;
       
       const query = searchQuery.toLowerCase().trim();
       const name = (location.name || "").toLowerCase();
+      const address = (location.address || "").toLowerCase();
       
+      // Split query into individual words for flexible matching
+      const queryWords = query.split(/\s+/).filter(w => w.length > 0);
+      
+      // NAME MATCHING (highest weight)
       if (name === query) return 100; // Exact match
-      if (name.startsWith(query)) return 80; // Starts with
-      if (name.includes(query)) return 60; // Contains
+      if (name.startsWith(query)) return 85; // Starts with
+      if (name.includes(query)) return 75; // Contains
       
-      // Word-based matching
-      const queryWords = query.split(/\s+/);
-      const nameWords = name.split(/\s+/);
-      let wordMatches = 0;
+      // Word-based matching on name (prefix + substring)
+      const nameWords = name.split(/[\s,\-./]+/).filter(w => w.length > 0);
+      let nameWordMatches = 0;
       queryWords.forEach(qWord => {
-        if (nameWords.some(nWord => nWord.startsWith(qWord) || nWord.includes(qWord))) {
-          wordMatches++;
-        }
+        const hasMatch = nameWords.some(nWord => 
+          nWord === qWord || nWord.startsWith(qWord) || nWord.includes(qWord)
+        );
+        if (hasMatch) nameWordMatches++;
       });
-      if (wordMatches > 0) return 40 + (wordMatches / queryWords.length) * 20;
+      if (nameWordMatches === queryWords.length) {
+        // All query words matched in name
+        return 70 + (nameWordMatches / queryWords.length) * 15;
+      }
+      if (nameWordMatches > 0) {
+        // Partial word match in name
+        return 50 + (nameWordMatches / queryWords.length) * 20;
+      }
+      
+      // ADDRESS MATCHING (secondary weight)
+      if (address && address.length > 0) {
+        // Full phrase in address
+        if (address.includes(query)) return 55;
+        
+        // Word-based matching on address (split by common delimiters)
+        const addressWords = address.split(/[\s,\-./]+/).filter(w => w.length > 0);
+        let addressWordMatches = 0;
+        let addressMatchCount = 0;
+        
+        queryWords.forEach(qWord => {
+          const matchIdx = addressWords.findIndex(aWord => 
+            aWord === qWord || aWord.startsWith(qWord) || aWord.includes(qWord)
+          );
+          if (matchIdx >= 0) {
+            addressWordMatches++;
+            // Weight earlier words (street address) more than later words (country)
+            const weight = 1 - (matchIdx / addressWords.length) * 0.3;
+            addressMatchCount += weight;
+          }
+        });
+        
+        if (addressWordMatches === queryWords.length) {
+          // All query words found in address
+          return 45 + (addressMatchCount / queryWords.length) * 15;
+        }
+        if (addressWordMatches > 0) {
+          // Partial address word match
+          return 25 + (addressMatchCount / queryWords.length) * 20;
+        }
+      }
       
       return 0;
     }
@@ -357,7 +603,8 @@
         
         const data = await response.json();
         return data.map(result => ({
-          name: result.display_name,
+          name: (result.display_name?.split(',')[0] || result.display_name || 'Location').trim(),
+          address: result.display_name || 'Unknown address',
           lat: parseFloat(result.lat),
           lng: parseFloat(result.lon),
           source: 'online'
@@ -372,26 +619,51 @@
     function addLocationToDisplay(location, isFromList = false) {
       const locationList = document.getElementById("locationList");
       
-      // Create custom marker element
-      const el = createFactoryMarkerElement(location.name);
-      
-      // Add marker to map using MapLibre
-      const marker = new maplibregl.Marker(el)
-        .setLngLat([location.lng, location.lat]) // [lng, lat] for MapLibre
-        .setPopup(new maplibregl.Popup({ offset: 25 })
-          .setHTML(`<b>${location.name || "Location"}</b><br>Click to select as Point B`))
-        .addTo(map);
+      // Add marker to map using Leaflet with popup buttons to set A or B
+      const popupHtml = `
+        <div style="min-width:200px">
+          <b>${location.name || "Location"}</b>
+          <div style="font-size:12px; color:#555; margin-top:6px;">${location.address || (`Lat: ${location.lat.toFixed(6)}, Lng: ${location.lng.toFixed(6)}`)}</div>
+          <div style="margin-top:8px; display:flex; gap:8px;">
+            <button class="popup-set-a" style="flex:1; padding:6px; background:#2196F3; color:white; border:none; border-radius:4px; cursor:pointer;">Set as Point A</button>
+            <button class="popup-set-b" style="flex:1; padding:6px; background:#4CAF50; color:white; border:none; border-radius:4px; cursor:pointer;">Set as Point B</button>
+          </div>
+        </div>`;
 
-      // Add click handler
-      el.addEventListener('click', () => {
-        selectSuggestedLocation(location);
-      });
+      const marker = L.marker([location.lat, location.lng], { icon: createFactoryIcon(location.name) })
+        .addTo(map)
+        .bindPopup(popupHtml);
 
+      // attach marker reference to location for list-clicks
+      location._marker = marker;
       suggestedMarkers.push(marker);
+
+      // when popup opens on this marker, wire the buttons
+      marker.on('popupopen', function(e) {
+        const popupEl = e.popup.getElement();
+        if (!popupEl) return;
+        const btnA = popupEl.querySelector('.popup-set-a');
+        const btnB = popupEl.querySelector('.popup-set-b');
+        if (btnA) {
+          btnA.onclick = () => {
+            setPointAFromLatLng(location.name || 'Selected location', location.lat, location.lng);
+            marker.closePopup();
+          };
+        }
+        if (btnB) {
+          btnB.onclick = () => {
+            setPointBFromLatLng(location.name || 'Selected location', location.lat, location.lng);
+            marker.closePopup();
+          };
+        }
+      });
 
       // Add to list
       const item = document.createElement("div");
       item.className = `location-item ${isFromList ? 'from-list' : 'from-online'}`;
+      
+      const header = document.createElement("div");
+      header.className = "location-item-header";
       
       const nameSpan = document.createElement("span");
       nameSpan.textContent = location.name || "Unnamed Location";
@@ -400,9 +672,22 @@
       badge.className = `location-badge ${isFromList ? 'badge-list' : 'badge-online'}`;
       badge.textContent = isFromList ? "List" : "Online";
       
-      item.appendChild(nameSpan);
-      item.appendChild(badge);
-      item.onclick = () => selectSuggestedLocation(location);
+      header.appendChild(nameSpan);
+      header.appendChild(badge);
+      item.appendChild(header);
+      
+      const addressText = location.address || `Lat: ${location.lat?.toFixed(6)}, Lng: ${location.lng?.toFixed(6)}`;
+      const addressDiv = document.createElement("div");
+      addressDiv.className = "location-address";
+      addressDiv.textContent = addressText;
+      item.appendChild(addressDiv);
+      
+      item.onclick = () => {
+        if (location._marker) {
+          map.setView([location.lat, location.lng], 14);
+          location._marker.openPopup();
+        }
+      };
       locationList.appendChild(item);
     }
 
@@ -445,9 +730,9 @@
       onlineResults.forEach(location => {
         // Check if this online result is already in our list (avoid duplicates)
         const isDuplicate = suggestedMarkers.some(marker => {
-          const markerLngLat = marker.getLngLat();
-          const markerLat = markerLngLat.lat;
-          const markerLng = markerLngLat.lng;
+          const markerLatLng = marker.getLatLng();
+          const markerLat = markerLatLng.lat;
+          const markerLng = markerLatLng.lng;
           const distance = Math.sqrt(
             Math.pow(markerLat - location.lat, 2) + 
             Math.pow(markerLng - location.lng, 2)
@@ -468,11 +753,11 @@
 
       // Fit map to show all markers
       if (suggestedMarkers.length > 0) {
-        const bounds = new maplibregl.LngLatBounds();
+        const bounds = L.latLngBounds([]);
         suggestedMarkers.forEach(marker => {
-          bounds.extend(marker.getLngLat());
+          bounds.extend(marker.getLatLng());
         });
-        map.fitBounds(bounds, { padding: 50 });
+        map.fitBounds(bounds.pad(0.1));
       }
     }
 
@@ -482,106 +767,9 @@
       // Search functionality is now handled by searchAndDisplayLocations
     }
 
-    // Function to calculate route using OSRM
-    async function calculateRoute(start, end) {
-      try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${start[0]},${start[1]};${end[0]},${end[1]}?overview=full&geometries=geojson`;
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-          return {
-            geometry: data.routes[0].geometry,
-            distance: data.routes[0].distance,
-            duration: data.routes[0].duration
-          };
-        }
-        return null;
-      } catch (error) {
-        console.error('Routing error:', error);
-        return null;
-      }
-    }
-
-    // Function to draw route on map
-    function drawRoute(route) {
-      // Remove existing route layer
-      if (routeLayer) {
-        if (map.getLayer('route')) {
-          map.removeLayer('route');
-        }
-        if (map.getSource('route')) {
-          map.removeSource('route');
-        }
-      }
-
-      // Add route source and layer (only if map is loaded)
-      if (!map.loaded()) {
-        map.once('load', () => drawRoute(route));
-        return;
-      }
-
-      map.addSource('route', {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: route.geometry
-        }
-      });
-
-      map.addLayer({
-        id: 'route',
-        type: 'line',
-        source: 'route',
-        layout: {
-          'line-join': 'round',
-          'line-cap': 'round'
-        },
-        paint: {
-          'line-color': '#2196F3',
-          'line-width': 4
-        }
-      });
-
-      routeLayer = true;
-    }
-
-    // Add navigation controls
-    map.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-    // Function to select a suggested location as Point B
-    async function selectSuggestedLocation(location) {
-      if (!pointA) {
-        alert("Waiting for Point A (your location). Please allow GPS.");
-        return;
-      }
-
-      if (markerB) markerB.remove();
-      pointB = [location.lat, location.lng];
-      
-      // Create Point B marker
-      const markerBEl = document.createElement('div');
-      markerBEl.innerHTML = '<i class="fas fa-map-marker-alt" style="color: #f44336; font-size: 32px;"></i>';
-      markerB = new maplibregl.Marker(markerBEl)
-        .setLngLat([location.lng, location.lat])
-        .setPopup(new maplibregl.Popup({ offset: 25 })
-          .setHTML(`Point B: ${location.name}`))
-        .addTo(map);
-      markerB.togglePopup();
-      
-      document.getElementById("pointB").innerText = `${location.name} (${pointB.join(", ")})`;
-
-      // Calculate and draw route
-      const route = await calculateRoute([pointA[1], pointA[0]], [pointB[1], pointB[0]]);
-      if (route) {
-        drawRoute(route);
-        const distKm = (route.distance / 1000).toFixed(2);
-        document.getElementById("calcDist").innerText = distKm;
-        document.getElementById("confirmBtn").style.display = "inline-block";
-      } else {
-        alert("Could not calculate route. Please try again.");
-      }
-    }
+    // Function to render route between Point A and Point B using Leaflet Routing Machine
+    // Using OSRM (Open Source Routing Machine) - free, no API key needed
+    // Already implemented in updateRoute() above
 
     // Setup search input event listener
     const searchInput = document.getElementById("locationSearch");
@@ -594,66 +782,6 @@
       }, 300); // Debounce search by 300ms
     });
 
-    // Wait for map to load before adding markers
-    map.on('load', function() {
-      // Get current location as Point A
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((pos) => {
-          pointA = [pos.coords.latitude, pos.coords.longitude];
-          document.getElementById("pointA").innerText = pointA.join(", ");
-          
-          // Create Point A marker
-          const markerAEl = document.createElement('div');
-          markerAEl.innerHTML = '<i class="fas fa-map-marker-alt" style="color: #4CAF50; font-size: 32px;"></i>';
-          markerA = new maplibregl.Marker(markerAEl)
-            .setLngLat([pos.coords.longitude, pos.coords.latitude])
-            .setPopup(new maplibregl.Popup({ offset: 25 })
-              .setHTML("Point A (You)"))
-            .addTo(map);
-          markerA.togglePopup();
-          
-          map.setCenter([pos.coords.longitude, pos.coords.latitude]);
-          map.setZoom(14);
-        }, () => {
-          document.getElementById("pointA").innerText = "Location unavailable";
-        }, { enableHighAccuracy: true });
-      }
-
-      // Select Point B by clicking map
-      map.on('click', async function(e) {
-        if (!pointA) {
-          alert("Waiting for Point A (your location). Please allow GPS.");
-          return;
-        }
-
-        if (markerB) markerB.remove();
-        pointB = [e.lngLat.lat, e.lngLat.lng];
-        
-        // Create Point B marker
-        const markerBEl = document.createElement('div');
-        markerBEl.innerHTML = '<i class="fas fa-map-marker-alt" style="color: #f44336; font-size: 32px;"></i>';
-        markerB = new maplibregl.Marker(markerBEl)
-          .setLngLat([e.lngLat.lng, e.lngLat.lat])
-          .setPopup(new maplibregl.Popup({ offset: 25 })
-            .setHTML("Point B"))
-          .addTo(map);
-        markerB.togglePopup();
-        
-        document.getElementById("pointB").innerText = pointB.join(", ");
-
-        // Calculate and draw route
-        const route = await calculateRoute([pointA[1], pointA[0]], [pointB[1], pointB[0]]);
-        if (route) {
-          drawRoute(route);
-          const distKm = (route.distance / 1000).toFixed(2);
-          document.getElementById("calcDist").innerText = distKm;
-          document.getElementById("confirmBtn").style.display = "inline-block";
-        } else {
-          alert("Could not calculate route. Please try again.");
-        }
-      });
-    });
-
     // Confirm button action
     document.getElementById("confirmBtn").addEventListener("click", () => {
       const result = {
@@ -664,6 +792,9 @@
       alert("Route confirmed:\n" + JSON.stringify(result, null, 2));
       // 👉 replace alert() with fetch("YOUR_POWER_AUTOMATE_URL", {...}) later
     });
+
+    // Initialize the map when the page loads
+    window.addEventListener('load', initMap);
   </script>
 </body>
 </html>
